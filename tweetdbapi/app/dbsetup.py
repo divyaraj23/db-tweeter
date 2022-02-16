@@ -42,7 +42,9 @@ class TweetData(db.Model):
         self.user_id = user_id
         self.tweet_text = tweet_text
         self.created_timestamp = created_timestamp
+
 db.create_all()
+
 def create_user(user_name):
     # Check if username exists
     fetch_user = Users.query.filter_by(username = user_name.lower()).first()
