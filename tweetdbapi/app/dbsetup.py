@@ -3,6 +3,8 @@ from app import db,ma
 from sqlalchemy import func
 import uuid
 import datetime
+from flask_jwt_extended import create_access_token
+
 
 class Users(db.Model):
     __tablename__ = 'users'
@@ -58,8 +60,10 @@ def create_user(user_name):
         add_user = Users(us_id, user_name.lower(), currentDateTime)
         db.session.add(add_user)
         db.session.commit()
+        access_token = create_access_token(identity=user_name.lower())
         return jsonify(user_id = us_id,
-                        username = user_name)
+                        username = user_name,
+                        access_tokn = access_token)
 
 def create_tweet(tweet_load):
 
@@ -102,6 +106,7 @@ def get_tweets_not_older(datenuser):
 
 def delete_tweets_by_user(user_name):
     fetch_user = Users.query.filter_by(username = user_name.lower()).first()
+    
 
     if fetch_user:
         twts_to_del = TweetData.query.filter_by(user_id = fetch_user.user_id).all()
