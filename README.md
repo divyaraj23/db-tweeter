@@ -9,6 +9,7 @@ This is an API written in python-flask which serves some endpoints to perform a 
 4. SQLAlchemy for the ORM layer.
 
 ### API is deployed on Heroku https://dbtweeter.herokuapp.com/
+### Web frontend deployed on Heroku https://db-tweeter-web.herokuapp.com/
 
 
 ## APIs
@@ -46,3 +47,20 @@ This API takes the username and the jwt token to delete all tweets of the user. 
 ### 5. Refresh Token (/refresh_token)
 This API refreshes the jwt token for a user supplied.
 ![refreshtoken](refreshtoken.png)
+
+## Tweet clone website (Web UI for the above APIs)
+### This web application directly calls the above discussed APIs and gives a human friendly way to achieve the teitter clone usecase of ours.
+The webapp is based on the React.js framework with some bootstrap for beautification.
+The formatting and placement of the web UI is crude due to time constraints and has few miniscule cosmetic bugs.
+
+Below screenshots show all the functions.
+![web1](web1.png)
+![web2](web2.png)
+
+
+
+#### Improvements thought of:
+1. Capturing errors from the API as this UI cant currently show errors.
+2. Better bootstrap formatting.
+3. Probably a multipage application with navbar and react-router.
+4. API to be made smarter by throwing verbose errors.
