@@ -64,3 +64,6 @@ Below screenshots show all the functions.
 2. Better bootstrap formatting.
 3. Probably a multipage application with navbar and react-router.
 4. API to be made smarter by throwing verbose errors.
+5. Redis cache for tokens.
+6. Nginx integration for better traffic handling/load balancing.
+7. Mutiple servers hosting the APIs and webapps for traffic and resiliency.
