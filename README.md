@@ -36,6 +36,6 @@ If no tweets found.
 
 ### 4. Delete tweets of a user (/tweet_delete)
 This API takes the username and the jwt token to delete all tweets of the user. It shows the number of tweets deleted alongwith the tweet ids and their corresponding texts.
-#### Improvement would have been to show the tweets in a nested json, but due to time constraints the output shows tweets in the format "<tweet id> :: <tweet text>".
+#### Improvement would have been to show the tweets in a nested json, but due to time constraints the output shows tweets in the format "tweet id :: tweet text".
   
 ![tweet_del](deletetweet.png)
