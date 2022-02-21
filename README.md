@@ -8,6 +8,9 @@ This is an API written in python-flask which serves some endpoints to perform a 
 3. Uses a cloud-hosted PostgreSQL as the database for storing tweet and userdata.
 4. SQLAlchemy for the ORM layer.
 
+### API is deployed on Heroku https://dbtweeter.herokuapp.com/
+
+
 ## APIs
 
 ### 1. Add user (/add_user)
@@ -39,3 +42,7 @@ This API takes the username and the jwt token to delete all tweets of the user. 
 #### Improvement would have been to show the tweets in a nested json, but due to time constraints the output shows tweets in the format "tweet id :: tweet text".
   
 ![tweet_del](deletetweet.png)
+
+### 5. Refresh Token (/refresh_token)
+This API refreshes the jwt token for a user supplied.
+![refreshtoken](refreshtoken.png)
