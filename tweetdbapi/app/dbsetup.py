@@ -47,6 +47,18 @@ class TweetData(db.Model):
 
 db.create_all()
 
+def refresh_token(user_name):
+    fetch_user = Users.query.filter_by(username = user_name.lower()).first()
+
+    if fetch_user:
+        access_token = create_access_token(identity=user_name.lower())
+        return jsonify(username = user_name,
+                        access_tokn = access_token)
+    else:
+        return jsonify("User doesnt exist")
+
+
+
 def create_user(user_name):
     # Check if username exists
     fetch_user = Users.query.filter_by(username = user_name.lower()).first()
@@ -55,7 +67,7 @@ def create_user(user_name):
         return "Username already exists"
     else:
         currentDateTime = datetime.datetime.now()
-        us_id = user_name[:6] + str(uuid.uuid4()
+        us_id = user_name[:2] + str(uuid.uuid4()
         .hex[:6])
         add_user = Users(us_id, user_name.lower(), currentDateTime)
         db.session.add(add_user)
@@ -82,11 +94,11 @@ def create_tweet(tweet_load):
     else:
         return "Tweet length should be between 2 and 140 charachters"
 
-def get_tweets_not_older(datenuser):
-    fetch_user = Users.query.filter_by(username = datenuser['uname'].lower()).first()
+def get_tweets_not_older(histdata):
+    fetch_user = Users.query.filter_by(username = histdata['uname'].lower()).first()
 
     if fetch_user:
-        entereddate = datetime.datetime.strptime(datenuser['grtndate'], "%d/%m/%Y").date()
+        entereddate = datetime.datetime.strptime(histdata['grtndate'], "%d/%m/%Y").date()
         twts_nod = TweetData.query.filter(TweetData.user_id == fetch_user.user_id, TweetData.created_timestamp >= entereddate).all()
         
         if len(twts_nod)>0:
