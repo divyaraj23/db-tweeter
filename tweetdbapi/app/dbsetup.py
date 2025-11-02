@@ -1,141 +1,205 @@
-from flask import jsonify
-from app import db,ma
-from sqlalchemy import func
-import uuid
 import datetime
+import uuid
+from typing import Dict, Iterable, List
+
+from flask import jsonify
 from flask_jwt_extended import create_access_token
+from sqlalchemy import delete, select
+
+from app import db
 
 
 class Users(db.Model):
-    __tablename__ = 'users'
-    '''
-    Columns:
-    1. user_id
-    2. username
-    3. created_timestamp
+    __tablename__ = "users"
 
-    '''
-    user_id = db.Column(db.String(8),primary_key=True)
-    username = db.Column(db.String(15))
-    created_timestamp = db.Column(db.DateTime)
+    user_id = db.Column(db.String(8), primary_key=True)
+    username = db.Column(db.String(15), unique=True, index=True, nullable=False)
+    created_timestamp = db.Column(db.DateTime, nullable=False, default=datetime.datetime.utcnow)
 
-    def __init__(self, user_id, username, created_timestamp):
-        self.user_id = user_id
-        self.username = username
-        self.created_timestamp = created_timestamp
+    tweets = db.relationship("TweetData", backref="user", lazy="dynamic")
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging helper
+        return f"<Users user_id={self.user_id} username={self.username}>"
+
 
 class TweetData(db.Model):
-    __tablename__ = 'tweetdata'
-    '''
-    Columns:
-    1. tweet_id
-    2. user_id
-    3. tweet_text
-    4. created_timestamp
+    __tablename__ = "tweetdata"
 
-    '''
-    tweet_id = db.Column(db.String(50), primary_key = True)
-    user_id = db.Column(db.String(8))
-    tweet_text = db.Column(db.String(280))
-    created_timestamp = db.Column(db.DateTime)
+    tweet_id = db.Column(db.String(36), primary_key=True)
+    user_id = db.Column(db.String(8), db.ForeignKey("users.user_id"), nullable=False, index=True)
+    tweet_text = db.Column(db.String(280), nullable=False)
+    created_timestamp = db.Column(db.DateTime, nullable=False, default=datetime.datetime.utcnow, index=True)
 
-    def __init__(self, tweet_id, user_id, tweet_text, created_timestamp):
-        self.tweet_id = tweet_id
-        self.user_id = user_id
-        self.tweet_text = tweet_text
-        self.created_timestamp = created_timestamp
+    def __repr__(self) -> str:  # pragma: no cover - debugging helper
+        return f"<TweetData tweet_id={self.tweet_id} user_id={self.user_id}>"
 
-db.create_all()
 
-def refresh_token(user_name):
-    fetch_user = Users.query.filter_by(username = user_name.lower()).first()
+def _normalize_username(user_name: str) -> str:
+    return (user_name or "").strip().lower()
 
+
+def _generate_user_id(username: str) -> str:
+    prefix = (username[:2] or "us").ljust(2, "x")
+    return f"{prefix}{uuid.uuid4().hex[:6]}"
+
+
+def _display_username(user_name: str, normalized: str) -> str:
+    return (user_name or "").strip() or normalized
+
+
+def refresh_token(user_name: str):
+    username = _normalize_username(user_name)
+
+    if not username:
+        return jsonify({"error": "username is required"}), 400
+
+    fetch_user = Users.query.filter_by(username=username).first()
+
+    if not fetch_user:
+        return jsonify({"error": "user not found"}), 404
+
+    access_token = create_access_token(identity=fetch_user.username)
+    return jsonify({
+        "username": _display_username(user_name, fetch_user.username),
+        "normalized_username": fetch_user.username,
+        "access_token": access_token,
+    }), 200
+
+
+def create_user(user_name: str):
+    username = _normalize_username(user_name)
+
+    if not username:
+        return jsonify({"error": "username is required"}), 400
+
+    fetch_user = Users.query.filter_by(username=username).first()
     if fetch_user:
-        access_token = create_access_token(identity=user_name.lower())
-        return jsonify(username = user_name,
-                        access_tokn = access_token)
-    else:
-        return jsonify("User doesnt exist")
+        return jsonify({"error": "username already exists"}), 409
+
+    current_datetime = datetime.datetime.utcnow()
+    user_id = _generate_user_id(username)
+    add_user = Users(user_id=user_id, username=username, created_timestamp=current_datetime)
+
+    db.session.add(add_user)
+    db.session.commit()
+
+    access_token = create_access_token(identity=username)
+    return jsonify({
+        "user_id": user_id,
+        "username": _display_username(user_name, username),
+        "normalized_username": username,
+        "access_token": access_token,
+        "created_timestamp": current_datetime.isoformat(),
+    }), 201
 
 
+def create_tweet(tweet_load: Dict[str, str]):
+    username = _normalize_username(tweet_load.get("uname"))
+    tweet_body = (tweet_load.get("tweetbody") or "").strip()
 
-def create_user(user_name):
-    # Check if username exists
-    fetch_user = Users.query.filter_by(username = user_name.lower()).first()
+    if not username:
+        return jsonify({"error": "uname is required"}), 400
 
-    if fetch_user:
-        return "Username already exists"
-    else:
-        currentDateTime = datetime.datetime.now()
-        us_id = user_name[:2] + str(uuid.uuid4()
-        .hex[:6])
-        add_user = Users(us_id, user_name.lower(), currentDateTime)
-        db.session.add(add_user)
-        db.session.commit()
-        access_token = create_access_token(identity=user_name.lower())
-        return jsonify(user_id = us_id,
-                        username = user_name,
-                        access_tokn = access_token)
+    if not (1 < len(tweet_body) < 141):
+        return jsonify({"error": "tweetbody must be between 2 and 140 characters"}), 400
 
-def create_tweet(tweet_load):
+    fetch_user = Users.query.filter_by(username=username).first()
+    if not fetch_user:
+        return jsonify({"error": "user not found"}), 404
 
-    if len(tweet_load['tweetbody']) > 1 and len(tweet_load['tweetbody']) < 141:
-        currentDateTime = datetime.datetime.now()
-        fetch_user = Users.query.filter_by(username = tweet_load['uname'].lower()).first()
-        if fetch_user.user_id:
-            twid = str(uuid.uuid4())
-            add_tweet = TweetData(twid , fetch_user.user_id, tweet_load['tweetbody'], currentDateTime)
-            db.session.add(add_tweet)
-            db.session.commit()
-            return jsonify(tweet_id = twid,
-                            created_timestamp = currentDateTime)
-        else:
-            return "User does not exist"
-    else:
-        return "Tweet length should be between 2 and 140 charachters"
+    current_datetime = datetime.datetime.utcnow()
+    tweet_id = uuid.uuid4().hex
 
-def get_tweets_not_older(histdata):
-    fetch_user = Users.query.filter_by(username = histdata['uname'].lower()).first()
+    add_tweet = TweetData(
+        tweet_id=tweet_id,
+        user_id=fetch_user.user_id,
+        tweet_text=tweet_body,
+        created_timestamp=current_datetime,
+    )
 
-    if fetch_user:
-        entereddate = datetime.datetime.strptime(histdata['grtndate'], "%d/%m/%Y").date()
-        twts_nod = TweetData.query.filter(TweetData.user_id == fetch_user.user_id, TweetData.created_timestamp >= entereddate).all()
-        
-        if len(twts_nod)>0:
-            twt_str = ""
-            for items in twts_nod:
-                if len(twt_str) == 0:
-                    twt_str = twt_str+str(items.tweet_text)
-                else:
-                    twt_str = twt_str+','+str(items.tweet_text)
+    db.session.add(add_tweet)
+    db.session.commit()
 
-            return jsonify(numoftweets = str(len(twts_nod)),
-                        tweets = twt_str)
-        else:
-            return "tweets not found"
-    else:
-        return "user not found"
+    return jsonify({
+        "tweet_id": tweet_id,
+        "created_timestamp": current_datetime.isoformat(),
+    }), 201
 
-def delete_tweets_by_user(user_name):
-    fetch_user = Users.query.filter_by(username = user_name.lower()).first()
-    
 
-    if fetch_user:
-        twts_to_del = TweetData.query.filter_by(user_id = fetch_user.user_id).all()
-        
-        if len(twts_to_del)>0:
-            twt_str = ""
-            for items in twts_to_del:
-                if len(twt_str) == 0:
-                    twt_str = twt_str+str(items.tweet_id)+'::'+str(items.tweet_text)
-                else:
-                    twt_str = twt_str+','+str(items.tweet_id)+'::'+str(items.tweet_text)
-                db.session.delete(items)
-                db.session.commit()
-            
-            return jsonify(numoftweets = str(len(twts_to_del)),
-                        tweets_id_text = twt_str)
-        else:
-            return "tweets not found"
-    else:
-        return "user not found"
+def get_tweets_not_older(histdata: Dict[str, str]):
+    username = _normalize_username(histdata.get("uname"))
+    if not username:
+        return jsonify({"error": "uname is required"}), 400
+
+    date_str = histdata.get("grtndate")
+    if not date_str:
+        return jsonify({"error": "grtndate is required"}), 400
+
+    try:
+        entered_date = datetime.datetime.strptime(date_str, "%d/%m/%Y").date()
+    except (TypeError, ValueError):
+        return jsonify({"error": "grtndate must be in DD/MM/YYYY format"}), 400
+
+    fetch_user = Users.query.filter_by(username=username).first()
+    if not fetch_user:
+        return jsonify({"error": "user not found"}), 404
+
+    start_datetime = datetime.datetime.combine(entered_date, datetime.time.min)
+
+    tweets: Iterable[TweetData] = (
+        TweetData.query.filter(
+            TweetData.user_id == fetch_user.user_id,
+            TweetData.created_timestamp >= start_datetime,
+        )
+        .order_by(TweetData.created_timestamp.asc())
+        .all()
+    )
+
+    if not tweets:
+        return jsonify({"error": "tweets not found"}), 404
+
+    response_payload: List[Dict[str, str]] = [
+        {
+            "tweet_id": tweet.tweet_id,
+            "tweet_text": tweet.tweet_text,
+            "created_timestamp": tweet.created_timestamp.isoformat(),
+        }
+        for tweet in tweets
+    ]
+
+    return jsonify({
+        "num_of_tweets": len(response_payload),
+        "tweets": response_payload,
+    }), 200
+
+
+def delete_tweets_by_user(user_name: str):
+    username = _normalize_username(user_name)
+    if not username:
+        return jsonify({"error": "username is required"}), 400
+
+    fetch_user = Users.query.filter_by(username=username).first()
+    if not fetch_user:
+        return jsonify({"error": "user not found"}), 404
+
+    tweets_to_delete = list(
+        db.session.execute(
+            select(TweetData.tweet_id, TweetData.tweet_text).where(TweetData.user_id == fetch_user.user_id)
+        )
+    )
+
+    if not tweets_to_delete:
+        return jsonify({"error": "tweets not found"}), 404
+
+    db.session.execute(delete(TweetData).where(TweetData.user_id == fetch_user.user_id))
+    db.session.commit()
+
+    payload = [
+        {"tweet_id": row.tweet_id, "tweet_text": row.tweet_text}
+        for row in tweets_to_delete
+    ]
+
+    return jsonify({
+        "num_of_tweets": len(payload),
+        "tweets": payload,
+    }), 200
