@@ -1,26 +1,44 @@
-from flask import Flask, render_template, request
+import os
+from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_marshmallow import Marshmallow
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
-import os
 
-app = Flask(__name__)
-CORS(app)
-
-basedir = os.path.abspath(os.path.dirname(__file__))
-
-app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://kfopqaazqonabh:e2dbbd44ad7c785d56146028dee9e6b2cf640321b6488f929ba8380d0447af46@ec2-50-19-32-96.compute-1.amazonaws.com:5432/d9r9ag8p9ffcir'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['JWT_SECRET_KEY'] = "02]zz^`{JO3+P~f<'fC.WQpL,+Q9Ph"
-app.config.from_object(__name__)
-app.config['SECRET_KEY'] = 'SjdnUends821Jsdlkvxh391ksdODnejdDw'
-
-db = SQLAlchemy(app)
-ma = Marshmallow(app)
-jt = JWTManager(app)
+db = SQLAlchemy()
+ma = Marshmallow()
+jwt = JWTManager()
 
 
-db.create_all()
+def create_app() -> Flask:
+    app = Flask(__name__)
+    CORS(app)
 
-from app import routes
+    basedir = os.path.abspath(os.path.dirname(__file__))
+    default_db_uri = f"sqlite:///{os.path.join(basedir, 'tweets.db')}"
+
+    database_url = os.getenv("DATABASE_URL", default_db_uri)
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
+
+    app.config.update(
+        SQLALCHEMY_DATABASE_URI=database_url,
+        SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        SQLALCHEMY_ENGINE_OPTIONS={"pool_pre_ping": True, "pool_recycle": 300},
+        JWT_SECRET_KEY=os.getenv("JWT_SECRET_KEY", "change-this-jwt-secret"),
+        SECRET_KEY=os.getenv("SECRET_KEY", "change-this-flask-secret"),
+        PROPAGATE_EXCEPTIONS=True,
+    )
+
+    db.init_app(app)
+    ma.init_app(app)
+    jwt.init_app(app)
+
+    with app.app_context():
+        db.create_all()
+
+    from app.routes import bp as api_bp
+
+    app.register_blueprint(api_bp)
+
+    return app

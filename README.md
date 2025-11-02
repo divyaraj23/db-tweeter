@@ -1,69 +1,179 @@
-# Basic Twitter clone API
+# Basic Twitter Clone API
 
-This is an API written in python-flask which serves some endpoints to perform a mix of user functions.
+This repository contains a small Flask-based backend that mimics a portion of Twitter's feature set: users can register, authenticate via JWT, post tweets, retrieve historical tweets, and delete them. The service now ships with Docker support, an environment-driven configuration, and a faster database layer.
 
-### Salient Features
-1. Creates UUIDs for tweets and internal user ids for an relaible unqiue attribute for both tweets and users.
-2. Implements JWT tokens
-3. Uses a cloud-hosted PostgreSQL as the database for storing tweet and userdata.
-4. SQLAlchemy for the ORM layer.
+## Quickstart
 
-### API is deployed on Heroku https://dbtweeter.herokuapp.com/
-### Web frontend deployed on Heroku https://db-tweeter-web.herokuapp.com/
+### Run with Docker (recommended)
 
+```bash
+docker compose up --build
+```
 
-## APIs
+The compose stack provisions both the API (`http://localhost:8000`) and a Postgres database. Default credentials are defined in `docker-compose.yml`; override them in a `.env` file or via environment variables before starting the stack for production use.
 
-### 1. Add user (/add_user)
-This API accepts a username string and returns the jwt token, user id and username upon invocation.
-It can check for duplicate userids and throw violation.
-![add_user](adduser_good.png)
+### Run locally with Python
 
-if the username already exists.
-![userexists](adduser_duplicate.png)
+```bash
+cd tweetdbapi
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 
-### 2. Create tweet (/add_tweet)
-This API accepts the tweet text, username and the jwt token and stores a tweet into the postgres db.
-It has jwt authentication.
-![create_tweet](createtweet_w_token.png)
+# Example configuration for SQLite (default) or Postgres
+export DATABASE_URL=sqlite:///app/tweets.db
+export JWT_SECRET_KEY=change-this-jwt-secret
+export SECRET_KEY=change-this-flask-secret
 
-If jwt is not supplied.
-![nojwt](createtweet_nojwt.png)
+python run.py  # or: FLASK_DEBUG=1 python run.py for hot reload
+```
 
-### 3. Pull tweets not older an a date (/tweet_hist)
-This API accepts the username, date and jwt token to show comma separated tweets not older than a date and the total count of those tweets.
-It has jwt authentication.
-![hist](tweethistory_withoutput.png)
+`DATABASE_URL` accepts any SQLAlchemy-compatible connection string (e.g. `postgresql+psycopg2://user:pass@host:5432/db`). When not provided, the service falls back to an embedded SQLite database stored in `app/tweets.db`.
 
-If no tweets found.
-![hist_notweet](tweethist_notweet.png)
+## Configuration Reference
 
-### 4. Delete tweets of a user (/tweet_delete)
-This API takes the username and the jwt token to delete all tweets of the user. It shows the number of tweets deleted alongwith the tweet ids and their corresponding texts.
-#### Improvement would have been to show the tweets in a nested json, but due to time constraints the output shows tweets in the format "tweet id :: tweet text".
-  
-![tweet_del](deletetweet.png)
+| Variable         | Description                                                 | Default (development)        |
+| ---------------- | ----------------------------------------------------------- | ---------------------------- |
+| `DATABASE_URL`   | SQLAlchemy database connection string                       | `sqlite:///app/tweets.db`    |
+| `JWT_SECRET_KEY` | Secret used to sign access tokens                           | `change-this-jwt-secret`     |
+| `SECRET_KEY`     | Flask session/CSRF signing key                              | `change-this-flask-secret`   |
+| `PORT`           | Bind port when running via `run.py` or Gunicorn             | `5000` (run.py) / `8000` (Docker) |
+| `FLASK_DEBUG`    | Enables Flask debug server when set to `1` (local dev only) | `0`                          |
 
-### 5. Refresh Token (/refresh_token)
-This API refreshes the jwt token for a user supplied.
-![refreshtoken](refreshtoken.png)
+## What Changed
 
-## Tweet clone website (Web UI for the above APIs)
-### This web application directly calls the above discussed APIs and gives a human friendly way to achieve the teitter clone usecase of ours.
-The webapp is based on the React.js framework with some bootstrap for beautification.
-The formatting and placement of the web UI is crude due to time constraints and has few miniscule cosmetic bugs.
+- Environment-driven setup with sensible defaults (SQLite locally, Postgres via `DATABASE_URL`).
+- Faster ORM operations using bulk deletes and reduced round-trips.
+- Consistent JSON error messages and HTTP status codes for easier client handling.
+- Dockerfile + `docker-compose.yml` for single-command bootstrap, plus Gunicorn-based production entrypoint.
+- Procfile updated to target the new `run:app` module layout.
 
-Below screenshots show all the functions.
-![web1](web1.png)
-![web2](web2.png)
+## API Overview
 
+All endpoints live under the base URL (e.g. `http://localhost:8000`). Responses are JSON and include informative error payloads with appropriate HTTP status codes.
 
+### 1. Add User - `POST /add_user`
 
-#### Improvements thought of:
-1. Capturing errors from the API as this UI cant currently show errors.
-2. Better bootstrap formatting.
-3. Probably a multipage application with navbar and react-router.
-4. API to be made smarter by throwing verbose errors.
-5. Redis cache for tokens.
-6. Nginx integration for better traffic handling/load balancing.
-7. Mutiple servers hosting the APIs and webapps for traffic and resiliency.
+Request body:
+
+```json
+{
+  "username": "alice"
+}
+```
+
+Success response (`201 Created`):
+
+```json
+{
+  "user_id": "al5fea1c0",
+  "username": "alice",
+  "normalized_username": "alice",
+  "access_token": "<jwt>",
+  "created_timestamp": "2025-11-02T12:34:56.789123"
+}
+```
+
+Duplicate usernames return `409 Conflict` with an `error` message.
+
+### 2. Create Tweet - `POST /add_tweet`
+
+Requires a valid JWT in the `Authorization: Bearer <token>` header.
+
+Request body:
+
+```json
+{
+  "uname": "alice",
+  "tweetbody": "Hello Flask!"
+}
+```
+
+Response (`201 Created`):
+
+```json
+{
+  "tweet_id": "9f0cbb5ef1b243879676742e3a0f6d87",
+  "created_timestamp": "2025-11-02T12:35:10.123456"
+}
+```
+
+Tweet length is enforced (2?140 characters). Invalid payloads return `400 Bad Request`; authentication mismatches return `401 Unauthorized`.
+
+### 3. Tweet History - `POST /tweet_hist`
+
+Body parameters:
+
+```json
+{
+  "uname": "alice",
+  "grtndate": "01/11/2025"
+}
+```
+
+Returns tweets created on or after the supplied date (inclusive) ordered by timestamp.
+
+```json
+{
+  "num_of_tweets": 2,
+  "tweets": [
+    {
+      "tweet_id": "...",
+      "tweet_text": "Hello Flask!",
+      "created_timestamp": "2025-11-02T12:35:10.123456"
+    },
+    {
+      "tweet_id": "...",
+      "tweet_text": "Second post",
+      "created_timestamp": "2025-11-02T13:01:02.456789"
+    }
+  ]
+}
+```
+
+An empty result is returned as `404 Not Found` with `{"error": "tweets not found"}`.
+
+### 4. Delete Tweets - `DELETE /tweet_delete?username=<name>`
+
+Deletes all tweets for the authenticated user and returns a summary of what was removed.
+
+```json
+{
+  "num_of_tweets": 2,
+  "tweets": [
+    { "tweet_id": "...", "tweet_text": "Hello Flask!" },
+    { "tweet_id": "...", "tweet_text": "Second post" }
+  ]
+}
+```
+
+### 5. Refresh Token - `POST /refresh_token`
+
+Request body:
+
+```json
+{
+  "username": "alice"
+}
+```
+
+Response (`200 OK`):
+
+```json
+{
+  "username": "alice",
+  "normalized_username": "alice",
+  "access_token": "<new jwt>"
+}
+```
+
+## Legacy UI Screenshots
+
+Images in this repository (`adduser_good.png`, `web1.png`, etc.) show the original front-end connected to the API. The JSON response shape has since been improved (nested structures instead of comma-separated strings), so the UI may require adjustments to match the current API output.
+
+## Future Enhancements
+
+- Add automated database migrations (Alembic) for schema evolution.
+- Extend test coverage for API routes and database helpers.
+- Introduce rate limiting and request validation middleware.
+- Explore Redis-based caching for frequently accessed timelines.
